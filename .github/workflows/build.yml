@@ -30,6 +30,10 @@ jobs:
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-fltk
 
+      # 静的ライブラリ(libfltk.a)があるか確認するための診断ログ
+      - name: Show FLTK package files
+        run: pacman -Ql mingw-w64-ucrt-x86_64-fltk | grep -E "\.a$|\.dll\.a$|cmake" || true
+
       - name: Configure
         run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
@@ -39,20 +43,27 @@ jobs:
       - name: Strip
         run: strip build/sticky_note.exe
 
-      # MSYS2のDLL(libstdc++等)に依存していないか確認(依存していたら失敗)
+      # MSYS2のDLLに依存していないか確認(依存していれば警告し、次の手順で同梱)
       - name: Check dependencies
         run: |
           ldd build/sticky_note.exe
           if ldd build/sticky_note.exe | grep -i "/ucrt64"; then
-            echo "::error::MSYS2 DLLに動的リンクされています。静的リンク設定を確認してください。"
-            exit 1
+            echo "::warning::MSYS2のDLLに動的リンクされています。DLLをzipに同梱します。"
+          else
+            echo "静的リンクできています。"
           fi
+
+      # 静的リンクできていれば exe のみ、できていなければ必要なDLLも同梱する
+      - name: Collect files
+        run: |
+          mkdir -p dist/sticky_note
+          cp build/sticky_note.exe dist/sticky_note/
+          ldd build/sticky_note.exe | grep -i "/ucrt64/" | awk '{print $3}' | sort -u | while read -r dll; do cp "$dll" dist/sticky_note/; done || true
+          ls -l dist/sticky_note
 
       - name: Package
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force dist/sticky_note | Out-Null
-          Copy-Item build/sticky_note.exe dist/sticky_note/
           Copy-Item README.md dist/sticky_note/
           if (Test-Path LICENSE) { Copy-Item LICENSE dist/sticky_note/ }
           Compress-Archive -Path dist/sticky_note/* -DestinationPath dist/sticky_note-windows-x64.zip
