@@ -1,0 +1,116 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSYS2 (UCRT64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-fltk
+
+      - name: Configure
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Strip
+        run: strip build/sticky_note.exe
+
+      # MSYS2のDLL(libstdc++等)に依存していないか確認(依存していたら失敗)
+      - name: Check dependencies
+        run: |
+          ldd build/sticky_note.exe
+          if ldd build/sticky_note.exe | grep -i "/ucrt64"; then
+            echo "::error::MSYS2 DLLに動的リンクされています。静的リンク設定を確認してください。"
+            exit 1
+          fi
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/sticky_note | Out-Null
+          Copy-Item build/sticky_note.exe dist/sticky_note/
+          Copy-Item README.md dist/sticky_note/
+          if (Test-Path LICENSE) { Copy-Item LICENSE dist/sticky_note/ }
+          Compress-Archive -Path dist/sticky_note/* -DestinationPath dist/sticky_note-windows-x64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sticky_note-windows-x64
+          path: dist/sticky_note-windows-x64.zip
+          if-no-files-found: error
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install fltk cmake ninja
+
+      - name: Configure
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Strip
+        run: strip build/sticky_note
+
+      # fltkのdylibに依存していないか確認用(配布時の注意点)
+      - name: Show dependencies
+        run: otool -L build/sticky_note
+
+      - name: Package
+        run: |
+          mkdir -p dist/sticky_note
+          cp build/sticky_note README.md dist/sticky_note/
+          [ -f LICENSE ] && cp LICENSE dist/sticky_note/ || true
+          (cd dist && zip -r sticky_note-macos-arm64.zip sticky_note)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sticky_note-macos-arm64
+          path: dist/sticky_note-macos-arm64.zip
+          if-no-files-found: error
+
+  release:
+    # v* タグをpushしたときだけ GitHub Releases に公開
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          generate_release_notes: true
