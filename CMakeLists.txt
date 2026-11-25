@@ -14,14 +14,32 @@ endif()
 
 find_package(FLTK REQUIRED)
 
-# FLTK 1.4 は fltk::fltk ターゲットを提供する。1.3系は FLTK_LIBRARIES を使う
-if(TARGET fltk::fltk)
-    set(STICKY_FLTK_LIBS fltk::fltk)
-elseif(FLTK_LIBRARIES)
-    set(STICKY_FLTK_LIBS ${FLTK_LIBRARIES})
-else()
-    set(STICKY_FLTK_LIBS fltk)
+# MinGWでは配布用にFLTKを静的リンクしたい。
+# fltk::fltk は共有ライブラリ(libfltk-1.4.dll)を指すため、静的版を優先して探す。
+set(STICKY_FLTK_LIBS "")
+if(MINGW)
+    if(TARGET fltk::fltk-static)
+        set(STICKY_FLTK_LIBS fltk::fltk-static)
+    else()
+        find_library(STICKY_FLTK_STATIC_LIB NAMES libfltk.a)
+        if(STICKY_FLTK_STATIC_LIB)
+            set(STICKY_FLTK_LIBS ${STICKY_FLTK_STATIC_LIB})
+        endif()
+    endif()
 endif()
+
+# 上記で見つからなければ通常の方法。
+# FLTK 1.4 は fltk::fltk ターゲットを提供する。1.3系は FLTK_LIBRARIES を使う
+if(NOT STICKY_FLTK_LIBS)
+    if(TARGET fltk::fltk)
+        set(STICKY_FLTK_LIBS fltk::fltk)
+    elseif(FLTK_LIBRARIES)
+        set(STICKY_FLTK_LIBS ${FLTK_LIBRARIES})
+    else()
+        set(STICKY_FLTK_LIBS fltk)
+    endif()
+endif()
+message(STATUS "FLTK link: ${STICKY_FLTK_LIBS}")
 
 # ソースファイルは main.mm または main.cpp のどちらか存在するものを利用
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/main.mm")
@@ -37,6 +55,9 @@ add_executable(sticky_note ${APP_SOURCES})
 if(FLTK_INCLUDE_DIR)
     target_include_directories(sticky_note PRIVATE ${FLTK_INCLUDE_DIR})
 endif()
+if(FLTK_INCLUDE_DIRS)
+    target_include_directories(sticky_note PRIVATE ${FLTK_INCLUDE_DIRS})
+endif()
 
 # macOSではCocoaフレームワークをリンクし、.cppの場合はObjective-C++として扱う
 if(APPLE)
@@ -45,7 +66,7 @@ if(APPLE)
     target_link_libraries(sticky_note PRIVATE ${STICKY_FLTK_LIBS} "-framework Cocoa")
 elseif(WIN32)
     target_link_libraries(sticky_note PRIVATE ${STICKY_FLTK_LIBS}
-        comctl32 comdlg32 gdi32 ole32 uuid user32 shell32 advapi32 ws2_32)
+        comctl32 comdlg32 gdi32 ole32 uuid user32 shell32 advapi32 ws2_32 winspool shlwapi)
     if(MINGW)
         # DLLなしで配布できるよう、ランタイムも静的リンク
         target_link_options(sticky_note PRIVATE -mwindows -static -static-libgcc -static-libstdc++)
