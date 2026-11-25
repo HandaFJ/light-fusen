@@ -1,0 +1,50 @@
+# ビルド成果物
+build/
+build-*/
+out/
+dist/
+cmake-build-*/
+
+# CMake 生成物（in-source ビルドした場合）
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+install_manifest.txt
+compile_commands.json
+Makefile
+.ninja_deps
+.ninja_log
+build.ninja
+
+# 実行ファイル・オブジェクト
+sticky_note
+sticky_note.exe
+*.o
+*.obj
+*.a
+*.lib
+*.dll
+*.dylib
+*.exp
+*.pdb
+*.ilk
+
+# IDE / エディタ
+.vscode/
+.idea/
+.vs/
+*.user
+*.swp
+*~
+.cache/
+.clangd
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 付箋アプリで保存したテキスト
+*.txt
+!CMakeLists.txt
